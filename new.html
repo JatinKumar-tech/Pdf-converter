@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Text Extractor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        h1 {
+            color: #2d3436;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .subtitle {
+            color: #636e72;
+            font-size: 1.1rem;
+        }
+
+        .upload-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .upload-zone {
+            border: 2px dashed #b2bec3;
+            border-radius: 8px;
+            padding: 2rem;
+            margin: 1rem 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upload-zone:hover {
+            border-color: #74b9ff;
+            background: #f8f9fa;
+        }
+
+        .upload-zone.dragover {
+            border-color: #0984e3;
+            background: #e3f2fd;
+        }
+
+        .upload-icon {
+            font-size: 2rem;
+            color: #74b9ff;
+            margin-bottom: 1rem;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .result-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        #textOutput {
+            width: 100%;
+            min-height: 300px;
+            padding: 1rem;
+            border: 1px solid #dfe6e9;
+            border-radius: 5px;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            overflow-y: auto;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 1rem 0;
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            color: #d63031;
+            display: none;
+            margin-top: 1rem;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            color: #636e72;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>PDF Text Extractor</h1>
+            <p class="subtitle">Extract text from your PDF files instantly</p>
+        </header>
+
+        <main>
+            <section class="upload-section">
+                <div class="upload-zone" id="dropZone">
+                    <div class="upload-icon">📄</div>
+                    <h2>Drop your PDF here</h2>
+                    <p>or click to select file</p>
+                    <input type="file" id="fileInput" accept=".pdf">
+                </div>
+                <div class="loading" id="loading"></div>
+                <div class="error-message" id="errorMessage"></div>
+            </section>
+
+            <section class="result-section" id="resultSection">
+                <h2>Extracted Text</h2>
+                <div id="textOutput"></div>
+            </section>
+        </main>
+
+        <footer>
+            <p>© 2024 PDF Text Extractor. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        // Initialize PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const loading = document.getElementById('loading');
+        const errorMessage = document.getElementById('errorMessage');
+        const resultSection = document.getElementById('resultSection');
+        const textOutput = document.getElementById('textOutput');
+
+        // Handle drag and drop events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.remove('dragover');
+            });
+        });
+
+        // Handle file drop
+        dropZone.addEventListener('drop', (e) => {
+            const file = e.dataTransfer.files[0];
+            if (file && file.type === 'application/pdf') {
+                processFile(file);
+            } else {
+                showError('Please upload a PDF file.');
+            }
+        });
+
+        // Handle file selection
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                processFile(file);
+            } else {
+                showError('Please upload a PDF file.');
+            }
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            setTimeout(() => {
+                errorMessage.style.display = 'none';
+            }, 3000);
+        }
+
+        async function processFile(file) {
+            loading.style.display = 'block';
+            errorMessage.style.display = 'none';
+            resultSection.style.display = 'none';
+            textOutput.textContent = '';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let fullText = '';
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    fullText += `Page ${i}\n${pageText}\n\n`;
+                }
+
+                textOutput.textContent = fullText;
+                resultSection.style.display = 'block';
+            } catch (error) {
+                showError('Error processing PDF: ' + error.message);
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
